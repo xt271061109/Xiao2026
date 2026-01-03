@@ -1,1 +1,13 @@
+p <- FeaturePlot(combined,
+                 features = c("Pdcd1"),
+                 reduction = 'wnn.umap')
 
+
+# Customize the color scale with different Viridis color maps
+p + scale_color_viridis_c(option = "viridis", limits = c(-2, 2))  # Use 'viridis' color map
+p + scale_color_viridis_c(option = "magma", limits = c(0, 2))   # Use 'magma' color map
+p + scale_color_viridis_c(option = "plasma", limits = c(0, 2))  # Use 'plasma' color map
+p + scale_color_viridis_c(option = "cividis", limits = c(0, 2)) # Use 'cividis' color map
+
+# Customize the color scale
+p + scale_color_viridis_c(limits = c(0, 2))  # Adjust limits as needed
