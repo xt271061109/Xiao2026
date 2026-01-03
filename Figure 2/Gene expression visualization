@@ -1,1 +1,119 @@
+#visualization
+Idents(combined) <- combined$seurat_clusters
+custom_palette <- brewer.pal(n = length(unique(combined$seurat_clusters)), name = "Accent")  # You can choose other palettes as well
+# Create the UMAP plots with the custom color scheme
+p1 <- DimPlot(
+  combined,
+  reduction = "umap.rna",
+  label = FALSE,
+  label.size = 2.5,
+  repel = TRUE,
+  cols = custom_palette  # Apply custom colors
+) + ggtitle("RNA") + theme_void()
 
+p2 <- DimPlot(
+  combined,
+  reduction = "umap.atac",
+  label = FALSE,
+  label.size = 2.5,
+  repel = TRUE,
+  cols = custom_palette  # Apply custom colors
+) + ggtitle("ATAC") + theme_void()
+
+p3 <- DimPlot(
+  combined,
+  reduction = "wnn.umap",
+  label = FALSE,
+  label.size = 2.5,
+  repel = TRUE,
+  cols = custom_palette  # Apply custom colors
+) + ggtitle("WNN") + theme_void()
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Set the output to a PNG file with a specified path
+png(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/figures_new/RNA_ATAC_WNN_UMAPs_seurat_clusters.png",
+  width = 3900,
+  height = 1600,
+  res = 300
+)  # Replace with your desired path
+
+p1 <- p1 + theme(legend.position = "none")  # Hide legend for p1
+p2 <- p2 + theme(legend.position = "none")  # Hide legend for p2
+p1 + p2 + p3 & theme(plot.title = element_text(hjust = 0.5))
+
+# Close the PNG device to save the file
+dev.off()
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Set the output to a PNG file with a specified path
+svg(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/figures_new/Zeb2_CovergePlot_condition.svg",
+  width = 12,
+  height = 9
+)  # Replace with your desired path
+
+combined$condition <-
+  factor(
+    combined$condition,
+    levels = c(
+      "progenitor1_WT",
+      "progenitor1_KO",
+      "progenitor2_WT",
+      "progenitor2_KO",
+      "effector_WT",
+      "effector_KO",
+      "proliferating_WT",
+      "proliferating_KO",
+      "exhausted_WT",
+      "exhausted_KO"
+    )
+  )
+Idents(combined) <- combined$condition
+CoveragePlot(
+  combined,
+  region = 'Pdcd1',
+  features = 'Pdcd1',
+  assay = 'ATAC',
+  expression.assay = 'SCT',
+  peaks = FALSE,
+  extend.upstream = 10000,
+  extend.downstream = 10000
+)
+
+CoveragePlot(
+  combined,
+  region = c("chr2-44950000-45200000"),
+  features = 'Zeb2',
+  assay = 'ATAC',
+  expression.assay = 'SCT',
+  peaks = FALSE
+)
+
+CoveragePlot(
+  combined,
+  region = c("chr9-21240000-21252000"),
+  features = 'S1pr5',
+  assay = 'ATAC',
+  expression.assay = 'SCT',
+  peaks = FALSE
+)
+
+# Close the device to save the file
+dev.off()
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+p <- FeaturePlot(combined,
+                 features = c("Pdcd1"),
+                 reduction = 'wnn.umap')
+
+
+# Customize the color scale with different Viridis color maps
+p + scale_color_viridis_c(option = "viridis", limits = c(-2, 2))  # Use 'viridis' color map
+p + scale_color_viridis_c(option = "magma", limits = c(0, 2))   # Use 'magma' color map
+p + scale_color_viridis_c(option = "plasma", limits = c(0, 2))  # Use 'plasma' color map
+p + scale_color_viridis_c(option = "cividis", limits = c(0, 2)) # Use 'cividis' color map
+
+# Customize the color scale
+p + scale_color_viridis_c(limits = c(0, 2))  # Adjust limits as needed
