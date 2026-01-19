@@ -1,0 +1,469 @@
+##Extended_Data_Fig.5b
+#visualization
+Idents(combined) <- combined$seurat_clusters
+custom_palette <-
+  brewer.pal(n = length(unique(combined$seurat_clusters)), name = "Accent")  # You can choose other palettes as well
+
+# Create the UMAP plots with the custom color scheme
+p1 <- DimPlot(
+  combined,
+  reduction = "umap.rna",
+  label = FALSE,
+  label.size = 2.5,
+  repel = TRUE,
+  cols = custom_palette  # Apply custom colors
+) + ggtitle("RNA") + theme_void()
+
+p2 <- DimPlot(
+  combined,
+  reduction = "umap.atac",
+  label = FALSE,
+  label.size = 2.5,
+  repel = TRUE,
+  cols = custom_palette  # Apply custom colors
+) + ggtitle("ATAC") + theme_void()
+
+p3 <- DimPlot(
+  combined,
+  reduction = "wnn.umap",
+  label = FALSE,
+  label.size = 2.5,
+  repel = TRUE,
+  cols = custom_palette  # Apply custom colors
+) + ggtitle("WNN") + theme_void()
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/RNA_ATAC_WNN_UMAPs_seurat_clusters.pdf",
+  width = 13,
+  height = 5
+)  # Replace with your desired path
+
+p1 <- p1 + theme(legend.position = "none")  # Hide legend for p1
+p2 <- p2 + theme(legend.position = "none")  # Hide legend for p2
+p1 + p2 + p3 & theme(plot.title = element_text(hjust = 0.5))
+
+# Close the PDF device to save the file
+dev.off()
+
+##Extended_Data_Fig.5c
+# Use FindAllMarkers to find markers for all celltypes
+Idents(combined) <- combined$celltype
+DefaultAssay(combined) <- "SCT"
+all_markers_raw <- FindAllMarkers(
+  combined,
+  only.pos = TRUE,
+  # Only return positive markers
+  min.pct = 0.25,
+  # Filter features detected in at least 25% of cells
+  logfc.threshold = 0.25,
+  # Minimum log fold change threshold
+  recorrect_umi = FALSE
+)
+
+all_markers_filtered <-
+  all_markers_raw[all_markers_raw$p_val_adj <= 0.05,]
+
+# Split the 'cluster' column to extract cell type and sample information
+all_markers_filtered <- all_markers_filtered %>%
+  mutate(celltype = sapply(strsplit(as.character(cluster), "_"), `[`, 1),
+         # Extract cell type (first part of the condition)
+         orig.ident = sapply(strsplit(as.character(cluster), "_"), `[`, 2))     # Extract sample (second part of the condition)
+
+# Group by condition (cluster) and select top 20 genes per condition based on avg_log2FC
+all_markers_top_20 <- all_markers_filtered %>%
+  group_by(cluster) %>%
+  top_n(n = 20, avg_log2FC) %>%
+  ungroup()
+
+# Check the number of genes after selecting the top 50 for each condition
+cat("Number of genes after selecting top 50 per condition:",
+    nrow(all_markers_top_20),
+    "\n")
+
+# View top few rows of the all_markers data
+head(all_markers)
+
+# Remove duplicate genes, keeping only the first occurrence
+all_markers <-
+  all_markers_top_20[!duplicated(all_markers_top_20$gene), ]
+
+# Check the number of rows before and after removing duplicates
+cat("Number of genes before removing duplicates:",
+    nrow(all_markers_top_20),
+    "\n")
+cat("Number of genes after removing duplicates:",
+    nrow(all_markers),
+    "\n")
+
+#Using SCT assay
+average_expression_SCT <-
+  AggregateExpression(combined, assays = "SCT")
+average_expression_SCT_matrix <- average_expression_SCT$SCT
+average_expression_SCT_matrix <-
+  as.matrix(average_expression_SCT_matrix)
+average_expression_matrix_KO_markers_all <-
+  average_expression_SCT_matrix[rownames(average_expression_SCT_matrix) %in% all_markers$gene, ]
+
+# Z-score: (value - mean) / standard deviation
+z_score_average_expression_matrix_KO_markers_all_raw <- t(scale(t(
+  average_expression_matrix_KO_markers_all
+)))  # Standardize the rows (genes)
+
+# Remove rows with NA/NaN/Inf values
+z_score_average_expression_matrix_KO_markers_all <-
+  z_score_average_expression_matrix_KO_markers_all_raw[complete.cases(z_score_average_expression_matrix_KO_markers_all_raw), ]
+
+# Create a row annotation for the clusters
+row_anno <- rowAnnotation(Cluster = factor(gene_clusters))
+
+# Manually set the desired column order (e.g., reorder by condition or identity)
+desired_column_order <-
+  c("progenitor1",
+    "progenitor2",
+    "effector",
+    "proliferating",
+    "exhausted")
+
+# Reorder the columns in the expression matrix
+z_score_average_expression_matrix_KO_markers_all <-
+  z_score_average_expression_matrix_KO_markers_all[, desired_column_order]
+
+# Transpose the matrix if needed
+z_score_transposed <-
+  t(z_score_average_expression_matrix_KO_markers_all)
+
+
+all_genes_heatmap <- Heatmap(
+  z_score_transposed,
+  name = "Z-score",
+  col = colorRamp2(c(
+    min(z_score_transposed),
+    mean(z_score_transposed),
+    max(z_score_transposed)
+  ), c("blue", "white", "red")),
+  show_row_names = TRUE,
+  row_names_gp = gpar(fontsize = 8),
+  show_column_names = TRUE,
+  cluster_rows = FALSE,
+  cluster_columns = TRUE,
+  column_names_gp = gpar(fontsize = 10),
+  heatmap_legend_param = list(title = "Z-score", legend_height = unit(4, "cm")),
+  show_row_dend = FALSE,
+  # Remove row dendrogram
+  show_column_dend = FALSE,
+  # Remove column dendrogram
+)
+
+# Set the output to PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/all_DEGs_SCT_celltype_heatmap.pdf",
+  width = 20,
+  height = 4
+)  # Replace with your desired path
+
+# Plot the heatmap
+draw(all_genes_heatmap,
+     auto_adjust = TRUE,
+     heatmap_legend_side = "right")
+
+# Close the PDF device to save the file
+dev.off()
+
+##Extended_Data_Fig.5d
+#find markers for every subtypes of CD8+ T cells comparing Control vs ZFP148 KO
+# subset combined based on cell types
+Idents(combined) <- combined$celltype
+combined_subset <-
+  subset(x = combined, idents = "progenitor1")
+combined_subset <-
+  subset(x = combined, idents = "progenitor2")
+combined_subset <- subset(x = combined, idents = "proliferating")
+combined_subset <- subset(x = combined, idents = "exhausted")
+
+# find markers for subset
+DefaultAssay(combined_subset) <- "SCT"
+Idents(combined_subset) <- combined_subset$orig.ident
+
+#combined_subset <- PrepSCTFindMarkers(combined_subset, assay = "SCT", verbose = TRUE)
+KO_DEGs_subset <- FindMarkers(
+  combined_subset,
+  ident.1 = "KO",
+  ident.2 = "WT",
+  min.pct = 0.25,
+  # Filter features detected in at least 25% of cells
+  logfc.threshold = 0.25,
+  # Minimum log fold change threshold
+  recorrect_umi = FALSE,
+  #only.pos = TRUE
+)
+
+# Add a column named "gene" using the row names
+KO_DEGs_subset$gene <- rownames(KO_DEGs_subset)
+
+#remove the gene Slc12a8
+KO_DEGs_subset <-
+  KO_DEGs_subset[!KO_DEGs_subset$gene %in% "Slc12a8",]
+
+# Check the first few rows to confirm the change
+head(KO_DEGs_subset, n = 50)
+
+# generate volcano plot for DEGs
+data <- KO_DEGs_subset
+
+# Set the threshold for significance
+p_val_threshold <- 0.05
+FC_threshold <- 0.25
+
+#Plot using EnhancedVolcano package
+keyvals <- ifelse(
+  data$avg_log2FC < -0.25 & data$p_val_adj <= 0.05,
+  '#8DCDD5',
+  ifelse(
+    data$avg_log2FC > 0.25 &
+      data$p_val_adj <= 0.05,
+    '#E6846D',
+    '#A9A9A9'
+  )
+)
+keyvals[is.na(keyvals)] <- '#A9A9A9'
+names(keyvals)[keyvals == '#E6846D'] <- 'high'
+names(keyvals)[keyvals == '#A9A9A9'] <- 'mid'
+names(keyvals)[keyvals == '#8DCDD5'] <- 'low'
+
+# Select top 11 upregulated and top 10 downregulated genes
+top_up <- data %>%
+  dplyr::filter(p_val_adj < 0.05) %>%
+  arrange(desc(avg_log2FC)) %>%
+  head(11) %>%
+  pull(gene)
+
+top_down <- data %>%
+  dplyr::filter(p_val_adj < 0.05) %>%
+  arrange(avg_log2FC) %>%
+  head(11) %>%
+  pull(gene)
+
+# Combine selected gene names
+selected_genes <- c(top_up, top_down)
+
+# Ensure p-values are not zero by replacing them with a small value
+min_nonzero <-
+  min(data$p_val_adj[data$p_val_adj > 0], na.rm = TRUE)  # Find smallest nonzero p-value
+data$p_val_adj[data$p_val_adj == 0] <-
+  min_nonzero * 0.1  # Replace 0 with 10% of the smallest nonzero p-value
+data$p_val_adj[data$p_val_adj < 1e-30] <-
+  1e-30  # Cap y-values at 75
+
+# EnhancedVolcano plot with only top 10 up/down genes labeled
+volcano_plot <- EnhancedVolcano(
+  data,
+  lab = data$gene,
+  x = 'avg_log2FC',
+  y = 'p_val_adj',
+  xlab = 'Log2 Fold Change',
+  ylab = '-Log10 Adjusted p-value',
+  pCutoff = p_val_threshold,
+  FCcutoff = FC_threshold,
+  pointSize = 2,
+  labSize = 3,
+  colAlpha = 0.8,
+  colCustom = keyvals,
+  legendPosition = 'right',
+  xlim = c(-2, 2),
+  selectLab = selected_genes,
+  # Label only top 10 up/down genes
+  arrowheads = FALSE,
+  drawConnectors = TRUE,
+  widthConnectors = 0.5,
+  lengthConnectors = 5,
+  typeConnectors = "closed",
+  max.overlaps = 20
+)
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Volcanoplot_DEGs_KO_marker_proliferating_NO_Slc12a8.pdf",
+  width = 7,
+  height = 6
+)  # Replace with your desired path
+
+# Display the plot
+print(volcano_plot)
+
+# Close the PDF device to save the file
+dev.off()
+
+#find DEGs for every subsets comparing control vs ZFP148 KO
+celltypes_to_run <-
+  c("progenitor1",
+    "progenitor2",
+    "proliferating",
+    "effector",
+    "exhausted")
+
+# output directory
+out_dir <-
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing"
+
+# store results if you want to re-use later
+KO_DEGs_list <- list()
+volcano_plot_list <- list()
+
+# Set the threshold for significance
+p_val_threshold <- 0.05
+logFC_threshold <- 0.25
+
+# make sure we start from celltype identities for subsetting
+Idents(combined) <- combined$celltype
+
+for (ct in celltypes_to_run) {
+  message("==== Processing celltype: ", ct, " ====")
+  
+  # subset
+  combined_subset <- subset(x = combined, idents = ct)
+  
+  # find markers in chromvar assay, KO vs WT
+  DefaultAssay(combined_subset) <- "SCT"
+  Idents(combined_subset) <- combined_subset$orig.ident
+  
+  KO_DEGs_subset <- FindMarkers(
+    combined_subset,
+    ident.1 = "KO",
+    ident.2 = "WT",
+    min.pct = 0.25,
+    # Filter features detected in at least 25% of cells
+    logfc.threshold = 0.25,
+    # Minimum log fold change threshold
+    recorrect_umi = FALSE,
+  )
+  
+  # add gene name
+  KO_DEGs_subset$gene <- rownames(KO_DEGs_subset)
+  
+  #remove the gene Slc12a8
+  KO_DEGs_subset <-
+    KO_DEGs_subset[!KO_DEGs_subset$gene %in% "Slc12a8",]
+  
+  # (optional) quick check
+  print(head(KO_DEGs_subset, n = 50))
+  
+  # prepare volcano colors
+  data <- KO_DEGs_subset
+  
+  keyvals <- ifelse(
+    data$avg_log2FC < -logFC_threshold &
+      data$p_val_adj <= p_val_threshold,
+    "#8DCDD5",
+    ifelse(
+      data$avg_log2FC >  logFC_threshold &
+        data$p_val_adj <= p_val_threshold,
+      "#E6846D",
+      "#A9A9A9"
+    )
+  )
+  keyvals[is.na(keyvals)] <- "#A9A9A9"
+  names(keyvals)[keyvals == "#E6846D"] <- "high"
+  names(keyvals)[keyvals == "#A9A9A9"] <- "mid"
+  names(keyvals)[keyvals == "#8DCDD5"] <- "low"
+  
+  # select top 10 up/down DEGs
+  top_up_DEGs <- data %>%
+    dplyr::filter(p_val_adj < p_val_threshold) %>%
+    arrange(desc(avg_log2FC)) %>%
+    head(10) %>%
+    pull(gene)
+  
+  top_down_DEGs <- data %>%
+    dplyr::filter(p_val_adj < p_val_threshold) %>%
+    arrange(avg_log2FC) %>%
+    head(10) %>%
+    pull(gene)
+  
+  selected_DEGs <- c(top_up_DEGs, top_down_DEGs)
+  
+  # avoid zeros in adjusted p-values
+  min_nonzero <-
+    min(data$p_val_adj[data$p_val_adj > 0], na.rm = TRUE)
+  if (is.finite(min_nonzero)) {
+    data$p_val_adj[data$p_val_adj == 0] <- min_nonzero * 0.1
+  }
+  
+  # volcano plot
+  volcano_plot <- EnhancedVolcano(
+    data,
+    lab = data$gene,
+    x = "avg_log2FC",
+    y = "p_val_adj",
+    xlab = "Log2 Fold Change",
+    ylab = "-Log10 Adjusted p-value",
+    pCutoff = p_val_threshold,
+    FCcutoff = logFC_threshold,
+    pointSize = 2,
+    labSize = 3,
+    colAlpha = 0.8,
+    colCustom = keyvals,
+    legendPosition = "right",
+    selectLab = selected_DEGs,
+    arrowheads = FALSE,
+    drawConnectors = TRUE,
+    widthConnectors = 0.5,
+    lengthConnectors = 5,
+    typeConnectors = "closed",
+    max.overlaps = 20
+  )
+  
+  # save pdf
+  pdf(file.path(out_dir, paste0("Volcano_DEGs_", ct, ".pdf")),
+      width = 7,
+      height = 6)
+  print(volcano_plot)
+  dev.off()
+  
+  # store outputs
+  KO_DEGs_list[[ct]] <- KO_DEGs_subset
+  volcano_plot_list[[ct]] <- volcano_plot
+}
+
+##Extended_Data_Fig.5e
+# Plot results from Enrichr (the table can be found in https://www.dropbox.com/scl/fo/3qre2knqzv3nm1aq6is0m/AO7A20jpg7HHSKoPdKets5s?rlkey=uqobo8oa1d4ytuzzmrnhfpzpg&st=1ibdtmmf&dl=0)
+data <-
+  read.delim(
+    "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Enrichr_DEGs/Effector_KO_CellMarker_2024_table.txt"
+  )
+
+# Convert Overlap to a numeric value (ratio)
+data <- data %>%
+  mutate(Overlap = as.numeric(str_extract(Overlap, "^[0-9]+")) /
+           as.numeric(str_extract(Overlap, "[0-9]+$")))
+
+# Rank Terms based on decreasing Overlap
+top10_data <- data %>%
+  arrange(desc(Overlap)) %>%
+  head(10) %>%
+  mutate(Term = factor(Term, levels = rev(Term)))
+
+# Set the output to a pdf file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Dotplot_Enrichr_CellMarker_2024_effector_KO.pdf",
+  width = 7,
+  height = 7
+)  # Replace with your desired path
+
+# Create the bar chart
+ggplot(data = top10_data,
+       aes(
+         x = Overlap,
+         y = Term,
+         color = Adjusted.P.value,
+         size = Combined.Score
+       )) +
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() +
+  ylab("") +
+  xlab("") +
+  ggtitle("GO Enrichment Analysis")
+
+# Close the pdf device to save the file
+dev.off()
