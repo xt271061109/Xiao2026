@@ -20,10 +20,12 @@ head(KO_markers_all_CD8T, n = 50)
 KO_markers_all_CD8T$gene <- rownames(KO_markers_all_CD8T)
 
 #filter p_val_adj <= 0.05
-KO_markers_all_CD8T <- KO_markers_all_CD8T[KO_markers_all_CD8T$p_val_adj <= 0.05,]
+KO_markers_all_CD8T <-
+  KO_markers_all_CD8T[KO_markers_all_CD8T$p_val_adj <= 0.05, ]
 
-#remove the gene Slc12a8 
-KO_markers_all_CD8T <- KO_markers_all_CD8T[!rownames(KO_markers_all_CD8T) %in% "Slc12a8", ]
+#remove the gene Slc12a8
+KO_markers_all_CD8T <-
+  KO_markers_all_CD8T[!rownames(KO_markers_all_CD8T) %in% "Slc12a8",]
 
 # Find differential gene activity for all CD8+ T cells comparing WT vs KO
 DefaultAssay(combined) <- 'geneactivity'
@@ -36,21 +38,25 @@ KO_d_geneactivity_all_CD8T <- FindMarkers(
   assay = 'geneactivity',
   min.pct = 0.05,
   # Minimum percentage of cells expressing the feature
-  logfc.threshold = 0.25,  # Log-fold change threshold
+  logfc.threshold = 0.25,
+  # Log-fold change threshold
   #only.pos = TRUE
 )
 
 # Add a column named "gene" using the row names
-KO_d_geneactivity_all_CD8T$gene <- rownames(KO_d_geneactivity_all_CD8T)
+KO_d_geneactivity_all_CD8T$gene <-
+  rownames(KO_d_geneactivity_all_CD8T)
 
 # Check the first few rows to confirm the change
 head(KO_d_geneactivity_all_CD8T, n = 50)
 
 #filter p_val_adj <= 0.05
-KO_d_geneactivity_all_CD8T <- KO_d_geneactivity_all_CD8T[KO_d_geneactivity_all_CD8T$p_val_adj <= 0.05,]
+KO_d_geneactivity_all_CD8T <-
+  KO_d_geneactivity_all_CD8T[KO_d_geneactivity_all_CD8T$p_val_adj <= 0.05, ]
 
-# remove the gene Slc12a8 
-KO_d_geneactivity_all_CD8T <- KO_d_geneactivity_all_CD8T[!rownames(KO_d_geneactivity_all_CD8T) %in% "Slc12a8", ]
+# remove the gene Slc12a8
+KO_d_geneactivity_all_CD8T <-
+  KO_d_geneactivity_all_CD8T[!rownames(KO_d_geneactivity_all_CD8T) %in% "Slc12a8",]
 
 # Find overlapping DEGs and d_geneactivity in all CD8+ T cells
 DEGs <- KO_markers_all_CD8T
@@ -79,31 +85,39 @@ pdf(
 
 # Display the plot
 ggplot(merged_degs, aes(x = avg_log2FC.x, y = avg_log2FC.y)) +
-  geom_point(color = "black", size = 1, alpha = 0.6) +  
-  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue", fill = "lightgray") +  
+  geom_point(color = "black",
+             size = 1,
+             alpha = 0.6) +
+  geom_smooth(
+    method = "lm",
+    formula = y ~ x,
+    se = TRUE,
+    color = "blue",
+    fill = "lightgray"
+  ) +
   geom_text_repel(
     aes(label = gene),
     size = 5,
-    fontface = "bold.italic",  
-    max.overlaps = 20,  
-    box.padding = 0.3,  
+    fontface = "bold.italic",
+    max.overlaps = 20,
+    box.padding = 0.3,
     point.padding = 0.3
   ) +
   annotate(
     "text",
-    x = min(merged_degs$avg_log2FC.x) + 0.2,  
+    x = min(merged_degs$avg_log2FC.x) + 0.2,
     y = max(merged_degs$avg_log2FC.y) - 0.2,
-    label = as.expression(bquote(italic(R) == .(round(correlation_result, 2)) ~ "," ~ italic(p) < 2.2e-16)),  
+    label = as.expression(bquote(
+      italic(R) == .(round(correlation_result, 2)) ~ "," ~ italic(p) < 2.2e-16
+    )),
     parse = TRUE,
     hjust = 0
   ) +
-  labs(
-    x = "ATAC log2 (fold change)",
-    y = "RNA log2 (fold change)"
-  ) +
+  labs(x = "ATAC log2 (fold change)",
+       y = "RNA log2 (fold change)") +
   theme_classic(base_size = 16) +
   theme(
-    plot.title = element_blank(),  
+    plot.title = element_blank(),
     axis.title = element_text(face = "bold"),
     plot.margin = margin(10, 10, 10, 10)
   )
@@ -135,12 +149,13 @@ combined$celltype <-
   )
 
 # Generate the violin plot and add boxplot for displaying medians
-VlnPlot(object = combined,
-        features = gene_of_interest,
-        group.by = 'celltype',
-        split.by = 'orig.ident',
-        assay = "SCT",
-        pt.size = 0  # Set to 0 to hide individual points
+VlnPlot(
+  object = combined,
+  features = gene_of_interest,
+  group.by = 'celltype',
+  split.by = 'orig.ident',
+  assay = "SCT",
+  pt.size = 0  # Set to 0 to hide individual points
 )
 
 # Close the PDF device to save the file
@@ -150,7 +165,8 @@ dev.off()
 DefaultAssay(combined) <- 'SCT'
 
 # Extract the expression matrix and metadata
-expression_data <- FetchData(combined, vars = c(gene_of_interest, "celltype", "orig.ident"))
+expression_data <-
+  FetchData(combined, vars = c(gene_of_interest, "celltype", "orig.ident"))
 
 # Perform Wilcoxon Rank-Sum test and calculate mean expression for each cell type
 results <- expression_data %>%
@@ -158,10 +174,8 @@ results <- expression_data %>%
   dplyr::summarize(
     mean_expression_WT = mean(.data[[gene_of_interest]][orig.ident == "WT"], na.rm = TRUE),
     mean_expression_KO = mean(.data[[gene_of_interest]][orig.ident == "KO"], na.rm = TRUE),
-    p_value = wilcox.test(
-      .data[[gene_of_interest]][orig.ident == "WT"], 
-      .data[[gene_of_interest]][orig.ident == "KO"]
-    )$p.value,
+    p_value = wilcox.test(.data[[gene_of_interest]][orig.ident == "WT"],
+                          .data[[gene_of_interest]][orig.ident == "KO"])$p.value,
     .groups = "drop"  # Avoid unnecessary grouping in the output
   ) %>%
   # Adjust p-values for multiple testing using FDR
@@ -197,12 +211,13 @@ combined$celltype <-
   )
 
 # Generate the violin plot and add boxplot for displaying medians
-VlnPlot(object = combined,
-        features = motif_of_interest,
-        group.by = 'celltype',
-        split.by = 'orig.ident',
-        assay = "chromvar",
-        pt.size = 0  # Set to 0 to hide individual points
+VlnPlot(
+  object = combined,
+  features = motif_of_interest,
+  group.by = 'celltype',
+  split.by = 'orig.ident',
+  assay = "chromvar",
+  pt.size = 0  # Set to 0 to hide individual points
 )
 
 # Close the PDF device to save the file
@@ -212,7 +227,8 @@ dev.off()
 DefaultAssay(combined) <- 'chromvar'
 
 # Extract the expression matrix and metadata
-expression_data <- FetchData(combined, vars = c(motif_of_interest, "celltype", "orig.ident"))
+expression_data <-
+  FetchData(combined, vars = c(motif_of_interest, "celltype", "orig.ident"))
 
 # Perform Wilcoxon Rank-Sum test and calculate mean expression for each cell type
 results <- expression_data %>%
@@ -220,10 +236,8 @@ results <- expression_data %>%
   dplyr::summarize(
     mean_expression_WT = mean(.data[[motif_of_interest]][orig.ident == "WT"], na.rm = TRUE),
     mean_expression_KO = mean(.data[[motif_of_interest]][orig.ident == "KO"], na.rm = TRUE),
-    p_value = wilcox.test(
-      .data[[motif_of_interest]][orig.ident == "WT"], 
-      .data[[motif_of_interest]][orig.ident == "KO"]
-    )$p.value,
+    p_value = wilcox.test(.data[[motif_of_interest]][orig.ident == "WT"],
+                          .data[[motif_of_interest]][orig.ident == "KO"])$p.value,
     .groups = "drop"  # Avoid unnecessary grouping in the output
   ) %>%
   # Adjust p-values for multiple testing using FDR
@@ -283,7 +297,7 @@ auc_matrix_scaled <- as.matrix(auc_matrix_scaled)
 
 colnames(auc_matrix_scaled) <- colnames(auc_matrix)
 
-auc_scores_vector_scaled <- auc_matrix_scaled["Geneset_custom",]
+auc_scores_vector_scaled <- auc_matrix_scaled["Geneset_custom", ]
 
 # Add AUC scores to the metadata of the Seurat object
 combined$AUC_Score_Geneset_custom <- auc_scores_vector_scaled
@@ -300,12 +314,18 @@ pdf(
 )  # Replace with your desired path
 
 ggplot(auc_data, aes(x = Condition, y = AUC_Score, fill = Condition)) +
-  geom_violin(trim = TRUE, scale = "width", alpha = 0.6) +  # Violin plot with uniform width
+  geom_violin(trim = TRUE,
+              scale = "width",
+              alpha = 0.6) +  # Violin plot with uniform width
   labs(title = "Violin Plot of AUC Scores for Klf2",
        x = "Condition",
        y = "AUC Score") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))  # Adjust x-axis label angle
+  theme(axis.text.x = element_text(
+    angle = 45,
+    hjust = 1,
+    vjust = 1
+  ))  # Adjust x-axis label angle
 
 
 # Close the PDF device to save the file
