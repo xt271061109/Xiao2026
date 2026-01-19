@@ -1,13 +1,788 @@
-p <- FeaturePlot(combined,
-                 features = c("Pdcd1"),
-                 reduction = 'wnn.umap')
+#Fig. 3b
+# List of genes you want to plot
+gene_list <-
+  read.table(
+    "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/genesets/May_genes.csv",
+    header = FALSE,
+    stringsAsFactors = FALSE
+  )[[1]]
+gene_list <-
+  c("Cx3cr1",
+    "Gzmb",
+    "Pdcd1",
+    "Slamf6",
+    "Tcf7",
+    "Sell",
+    "Havcr2",
+    "Cd244a",
+    "Mki67")
+
+# Directory to save plots
+#output_dir <- "replace with your own directory"
+dir.create(output_dir, showWarnings = FALSE)
+
+# Loop through each gene and save the plot
+for (gene in gene_list) {
+  p <- FeaturePlot(
+    object = combined,
+    features = gene,
+    reduction = "wnn.umap",
+    pt.size = 0.7,
+    cols = c("grey", "red"),
+    min.cutoff = 0,
+    max.cutoff = 1
+  )
+  
+  p + NoAxes() + theme(legend.position = "none") + ggtitle(NULL)
+  
+  # Save plot
+  ggsave(
+    filename = file.path(output_dir, paste0(gene, "_featureplot.pdf")),
+    plot = p,
+    width = 6,
+    height = 6,
+  )
+}
+
+#Fig. 3c
+# Load the custom gene set from a file (e.g., a CSV or text file)
+# The gene sets used below can be found in: https://www.dropbox.com/scl/fo/3qre2knqzv3nm1aq6is0m/AO7A20jpg7HHSKoPdKets5s?rlkey=uqobo8oa1d4ytuzzmrnhfpzpg&st=1ibdtmmf&dl=0
+Geneset_custom = read.csv(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/genesets/LCMV_progenitor.csv",
+  header = TRUE
+)
+Geneset_custom = read.csv(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/genesets/Miller_LCMV_effector_like.csv",
+  header = TRUE
+)
+Geneset_custom = read.csv(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/genesets/Miller_LCMV_terminal_exhausted.csv",
+  header = TRUE
+)
+
+# Assuming the gene names are in the first column, adjust if necessary
+gene_list <-
+  as.vector(Geneset_custom[[1]])  # Change the index to the correct column if necessary
+
+# Create a named list for AUCell
+gene_set_for_aucell <- list(Geneset_custom = gene_list)
+
+# Extract RNA expression matrix
+expr_matrix_rna <- as.matrix(combined@assays$SCT@data)
+
+# Check which genes are detected in the expression matrix
+detected_genes <- rownames(expr_matrix_rna)
+
+# Filter the gene set to include only detected genes
+gene_set_for_aucell_filtered <-
+  gene_set_for_aucell[["Geneset_custom"]][gene_set_for_aucell[["Geneset_custom"]] %in% detected_genes]
+
+# Check the size of the filtered gene set
+if (length(gene_set_for_aucell_filtered) < 10) {
+  stop("The filtered gene set contains fewer than 10 genes. Please check the gene set.")
+}
+
+# Build rankings and calculate AUC
+cells_rankings <-
+  AUCell_buildRankings(expr_matrix_rna, plotStats = TRUE)
+auc_scores <-
+  AUCell_calcAUC(list(Geneset_custom = gene_set_for_aucell_filtered),
+                 cells_rankings)
+
+# Extract AUC matrix from auc_scores
+auc_matrix <- as.data.frame(getAUC(auc_scores))
+
+# Normalize the data by applying a z-score transformation to each gene set across cells
+# Scale each column to mean = 0, sd = 1 across cells
+auc_matrix_scaled <- t(apply(auc_matrix, 1, scale))
+
+# Convert the result back to a data frame
+auc_matrix_scaled <- as.matrix(auc_matrix_scaled)
+
+colnames(auc_matrix_scaled) <- colnames(auc_matrix)
+
+auc_scores_vector_scaled <- auc_matrix_scaled["Geneset_custom", ]
+
+# Add AUC scores to the metadata of the Seurat object
+combined$AUC_Score_Geneset_custom <- auc_scores_vector_scaled
+
+# Plot UMAP with AUC scores
+umap_data <- Embeddings(combined, "wnn.umap")
+
+# Create a data frame for plotting, including the sample identity
+umap_df <- data.frame(
+  UMAP1 = umap_data[, 1],
+  UMAP2 = umap_data[, 2],
+  AUC_Score = combined$AUC_Score_Geneset_custom,
+  Sample = combined$orig.ident
+)
+
+# Plot UMAP with AUC scores
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/LCMV_progenitor.pdf"
+  ,
+  width = 6,
+  height = 6
+)  # Replace with your desired path
+
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = AUC_Score)) +
+  geom_point(alpha = 0.7, size = 1) +
+  scale_color_viridis_c(option = "A") +  # You can choose from options: "A", "B", "C", "D"
+  labs(x = "UMAP1",
+       y = "UMAP2",
+       color = "AUC Score") +
+  theme_minimal()
 
 
-# Customize the color scale with different Viridis color maps
-p + scale_color_viridis_c(option = "viridis", limits = c(-2, 2))  # Use 'viridis' color map
-p + scale_color_viridis_c(option = "magma", limits = c(0, 2))   # Use 'magma' color map
-p + scale_color_viridis_c(option = "plasma", limits = c(0, 2))  # Use 'plasma' color map
-p + scale_color_viridis_c(option = "cividis", limits = c(0, 2)) # Use 'cividis' color map
+# Close the PDF device to save the file
+dev.off()
 
-# Customize the color scale
-p + scale_color_viridis_c(limits = c(0, 2))  # Adjust limits as needed
+#Fig. 3d
+# Reorder the factor levels in orig.ident to swap WT (or control) and ZFP148 KO
+combined$orig.ident <-
+  factor(combined$orig.ident, levels = c("WT", "KO"))
+
+#cell type annotation
+Idents(combined) <- 'seurat_clusters'
+combined <- RenameIdents(combined, '4' = 'progenitor1')
+combined <- RenameIdents(combined, '3' = 'progenitor2')
+combined <- RenameIdents(combined,
+                         '1' = 'effector')
+combined <- RenameIdents(combined, '2' = 'proliferating')
+combined <- RenameIdents(combined,
+                         '0' = 'exhausted',
+                         '5' = "exhausted")
+combined$celltype <- Idents(combined)
+
+
+# Plot UMAP containing WT cells
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/UMAP_WNN_WT_celltype_plot.pdf",
+  width = 7,
+  height = 6
+)  # Replace with your desired path
+
+Idents(combined) <- combined$celltype
+p <- DimPlot(
+  combined,
+  reduction = "wnn.umap",
+  label = FALSE,
+  repel = TRUE,
+  pt.size = 0.6,
+  cells = WhichCells(combined, expression = orig.ident == "WT")
+)
+
+# Remove the legend using ggplot2
+p + NoAxes()
+
+# Close the PDF device to save the file
+dev.off()
+
+# Plot UMAP containing ZFP148 KO cells
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/UMAP_WNN_KO_celltype_plot.pdf",
+  width = 7,
+  height = 6
+)  # Replace with your desired path
+
+Idents(combined) <- combined$celltype
+p <- DimPlot(
+  combined,
+  reduction = "wnn.umap",
+  label = FALSE,
+  repel = TRUE,
+  pt.size = 0.6,
+  cells = WhichCells(combined, expression = orig.ident == "KO")
+)
+
+# Remove the legend using ggplot2
+p + NoAxes()
+
+# Close the PDF device to save the file
+dev.off()
+
+
+#calculate relative frequency of each cell type in WT/KO
+Idents(combined) <- combined$celltype
+cell_types <- Idents(combined)
+sample <- combined$orig.ident
+
+# Create a data frame for easier processing
+cell_data <- data.frame(cell_type = cell_types, sample = sample)
+
+# Calculate relative frequencies separately for each sample
+relative_frequencies <- cell_data %>%
+  group_by(sample, cell_type) %>%
+  dplyr::summarize(count = n(), .groups = 'drop') %>%
+  group_by(sample) %>%
+  mutate(relative_frequency = count / sum(count))
+
+# Reorder the sample factor levels
+relative_frequencies$sample <-
+  factor(relative_frequencies$sample, levels = c("WT", "KO"))
+
+## Print the result
+print(relative_frequencies)
+
+# Filter for WT cells
+relative_frequencies_subset <- relative_frequencies %>%
+  dplyr::filter(sample == "WT")
+
+# Plot piechart for WT cells
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/piechart_WT.pdf",
+  width = 6,
+  height = 6
+)  # Replace with your desired path
+
+ggplot(data = relative_frequencies_subset, aes(x = "", y = relative_frequency, fill = cell_type)) +
+  geom_col(width = 1, color = "black") +  # Add border color for each slice
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(fill = "Cell Type") +
+  theme(
+    legend.position = "right",
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 16),
+    plot.title = element_text(size = 20)
+  )
+
+# Close the PDF device to save the file
+dev.off()
+
+# Filter for ZFP148 KO cells
+relative_frequencies_subset <- relative_frequencies %>%
+  dplyr::filter(sample == "KO")
+
+# Plot piechart for ZFP148 KO cells
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/piechart_KO.pdf",
+  width = 6,
+  height = 6
+)  # Replace with your desired path
+
+ggplot(data = relative_frequencies_subset, aes(x = "", y = relative_frequency, fill = cell_type)) +
+  geom_col(width = 1, color = "black") +  # Add border color for each slice
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(fill = "Cell Type") +
+  theme(
+    legend.position = "right",
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 16),
+    plot.title = element_text(size = 20)
+  )
+
+# Close the PDF device to save the file
+dev.off()
+
+#Fig. 3e
+# Create a new condition metadata column by combining cell type and sample information
+combined$condition <-
+  paste(combined$celltype, combined$orig.ident, sep = "_")
+
+# Set the new condition as the active identity class
+Idents(combined) <- "condition"
+
+# Use FindAllMarkers to find markers for all conditions
+Idents(combined) <- combined$celltype
+Idents(combined) <- combined$condition
+DefaultAssay(combined) <- "SCT"
+all_markers_raw <- FindAllMarkers(
+  combined,
+  only.pos = TRUE,
+  # Only return positive markers
+  min.pct = 0.25,
+  # Filter features detected in at least 25% of cells
+  logfc.threshold = 0.25,
+  # Minimum log fold change threshold
+  recorrect_umi = FALSE
+)
+
+all_markers_filtered <-
+  all_markers_raw[all_markers_raw$p_val_adj <= 0.05,]
+
+# Split the 'cluster' column to extract cell type and sample information
+all_markers_filtered <- all_markers_filtered %>%
+  mutate(celltype = sapply(strsplit(as.character(cluster), "_"), `[`, 1),
+         # Extract cell type (first part of the condition)
+         orig.ident = sapply(strsplit(as.character(cluster), "_"), `[`, 2))     
+
+# Group by condition (cluster) and select top 10 genes per condition based on avg_log2FC
+all_markers_top_10 <- all_markers_filtered %>%
+  group_by(cluster) %>%
+  top_n(n = 10, avg_log2FC) %>%
+  ungroup()
+
+# Check the number of genes after selecting the top 50 for each condition
+cat("Number of genes after selecting top 50 per condition:",
+    nrow(all_markers_top_50),
+    "\n")
+
+# Remove duplicate genes, keeping only the first occurrence
+all_markers <-
+  all_markers_top_10[!duplicated(all_markers_top_50$gene), ]
+
+# Check the number of rows before and after removing duplicates
+cat("Number of genes before removing duplicates:",
+    nrow(all_markers_top_10),
+    "\n")
+cat("Number of genes after removing duplicates:",
+    nrow(all_markers),
+    "\n")
+
+Idents(combined) <- combined$celltype
+
+#Using SCT assay
+average_expression_SCT <-
+  AggregateExpression(combined, assays = "SCT")
+average_expression_SCT <-
+  AggregateExpression(combined, assays = "SCT", add.ident = "orig.ident")
+average_expression_SCT_matrix <- average_expression_SCT$SCT
+average_expression_SCT_matrix <-
+  as.matrix(average_expression_SCT_matrix)
+average_expression_matrix_KO_markers_all <-
+  average_expression_SCT_matrix[rownames(average_expression_SCT_matrix) %in% all_markers$gene, ]
+
+# Z-score: (value - mean) / standard deviation
+z_score_average_expression_matrix_KO_markers_all_raw <- t(scale(t(
+  average_expression_matrix_KO_markers_all
+)))  # Standardize the rows (genes)
+
+# Remove rows with NA/NaN/Inf values
+z_score_average_expression_matrix_KO_markers_all <-
+  z_score_average_expression_matrix_KO_markers_all_raw[complete.cases(z_score_average_expression_matrix_KO_markers_all_raw), ]
+
+# Visualize the clustered genes with a heatmap
+# Manually set the desired column order (e.g., reorder by condition or identity)
+desired_column_order <-
+  c(
+    "progenitor1_WT",
+    "progenitor1_KO",
+    "progenitor2_WT",
+    "progenitor2_KO",
+    "effector_WT",
+    "effector_KO",
+    "proliferating_WT",
+    "proliferating_KO",
+    "exhausted_WT",
+    "exhausted_KO"
+  )
+
+# Reorder the columns in the expression matrix
+z_score_average_expression_matrix_KO_markers_all <-
+  z_score_average_expression_matrix_KO_markers_all[, desired_column_order]
+
+# Transpose the matrix if needed
+z_score_transposed <-
+  t(z_score_average_expression_matrix_KO_markers_all)
+
+# Generate the heatmap
+all_genes_heatmap <- Heatmap(
+  z_score_transposed,
+  name = "Z-score",
+  col = colorRamp2(c(
+    min(z_score_transposed),
+    mean(z_score_transposed),
+    max(z_score_transposed)
+  ), c("blue", "white", "red")),
+  show_row_names = TRUE,
+  row_names_gp = gpar(fontsize = 8),
+  show_column_names = TRUE,
+  cluster_rows = FALSE,
+  cluster_columns = TRUE,
+  column_names_gp = gpar(fontsize = 10),
+  column_names_rot = 45,
+  # Rotate column names 45 degrees to the left
+  heatmap_legend_param = list(title = "Z-score", legend_height = unit(4, "cm")),
+  show_row_dend = FALSE,
+  # Remove row dendrogram
+  show_column_dend = FALSE,
+  # Remove column dendrogram
+)
+
+# Set the output to a SVG file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/all_DEGs_SCT_heatmap.pdf",
+  width = 14,
+  height = 4
+)  # Replace with your desired path
+
+# Plot the heatmap
+draw(all_genes_heatmap,
+     auto_adjust = TRUE,
+     heatmap_legend_side = "right")
+
+# Close the PDF device to save the file
+dev.off()
+
+#Fig. 3f
+# Psedotime analysis by Slingshot
+DefaultAssay(combined) <- "SCT"
+
+# Convert Seurat object to SingleCellExperiment
+sce <- as.SingleCellExperiment(combined, assay = "SCT")
+
+# Extract WNN UMAP embeddings from Seurat and add to SingleCellExperiment
+reducedDims(sce)$UMAP <- Embeddings(combined, "wnn.umap")
+
+# Define the starting point and perform Slingshot on WNN UMAP embeddings
+sce <-
+  slingshot(
+    sce,
+    clusterLabels = 'celltype',
+    reducedDim = 'UMAP',
+    start.clus = "progenitor1",
+    end.clus = c("exhausted")
+  )
+
+# Ensure Seurat object has been clustered
+Celltypes <- as.factor(combined$celltype)
+# Extract Seurat cluster colors (fixing the extraction method)
+# Use Idents to get cluster identities
+Idents(combined) <- combined$celltype
+Celltype_ids <- Idents(combined)
+
+# Get the Seurat-defined cluster colors using DimPlot, but don't use the returned plot object.
+DimPlot(combined, reduction = "wnn.umap")  # Make sure plot is generated once for color initialization
+cluster_palette <-
+  scales::hue_pal()(length(unique(Celltype_ids)))  # Generate a color palette
+
+# Map cluster IDs to colors
+cluster_colors <- setNames(cluster_palette, levels(Celltype_ids))
+
+# Assign colors to cells based on their cluster identity
+cell_colors <- cluster_colors[as.character(Celltype_ids)]
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/UMAP_psedotime_SCT_plot.pdf",
+  width = 6,
+  height = 6
+)  # Replace with your desired path
+
+# Plot UMAP with cell colors, without axes
+plot(
+  reducedDims(sce)$UMAP,
+  col = cell_colors,
+  pch = 16,
+  cex = 0.5,
+  asp = 1,
+  xlab = "",
+  # Remove x-axis label
+  ylab = "",
+  # Remove y-axis label
+  axes = FALSE       # Remove axes
+)
+
+# Add Slingshot trajectory lines
+lines(SlingshotDataSet(sce), lwd = 3, col = 'black')
+
+# Close the PDF device to save the file
+dev.off()
+
+# Calculate relative frequency of WT/KO cells in pseudotime_1 vs pseudotime_2
+# Assuming pseudotime is a matrix or data frame with your pseudotime values
+pseudotime_WT <- pseudotime[sce$orig.ident == "WT",]
+pseudotime_KO <- pseudotime[sce$orig.ident == "KO",]
+
+# Create data frames for WT and KO
+wt_df_psedotime_1 <- data.frame(Pseudotime1 = pseudotime_WT[, 1])
+wt_df_psedotime_2 <- data.frame(Pseudotime2 = pseudotime_WT[, 2])
+
+ko_df_psedotime_1 <- data.frame(Pseudotime1 = pseudotime_KO[, 1])
+ko_df_psedotime_2 <- data.frame(Pseudotime2 = pseudotime_KO[, 2])
+
+# Remove rows with NA values
+wt_df_pseudotime_1 <-
+  na.omit(data.frame(Pseudotime1 = pseudotime_WT[, 1]))
+wt_df_pseudotime_2 <-
+  na.omit(data.frame(Pseudotime2 = pseudotime_WT[, 2]))
+
+ko_df_pseudotime_1 <-
+  na.omit(data.frame(Pseudotime1 = pseudotime_KO[, 1]))
+ko_df_pseudotime_2 <-
+  na.omit(data.frame(Pseudotime2 = pseudotime_KO[, 2]))
+
+# Count number of cells in each pseudotime dimension for WT
+count_wt_pseudotime_1 <- data.frame(Condition = "WT",
+                                    Count1 = nrow(wt_df_pseudotime_1))
+
+count_wt_pseudotime_2 <- data.frame(Condition = "WT",
+                                    Count1 = nrow(wt_df_pseudotime_2))
+
+# Count number of cells in each pseudotime dimension for KO
+count_ko_pseudotime_1 <- data.frame(Condition = "KO",
+                                    Count1 = nrow(ko_df_pseudotime_1))
+
+count_ko_pseudotime_2 <- data.frame(Condition = "KO",
+                                    Count1 = nrow(ko_df_pseudotime_2))
+
+# Create data frames for WT and KO counts
+count_wt <- data.frame(
+  Condition = c("WT", "WT"),
+  Pseudotime = c("Pseudotime1", "Pseudotime2"),
+  Count = c(nrow(wt_df_pseudotime_1), nrow(wt_df_pseudotime_2))
+)
+
+count_ko <- data.frame(
+  Condition = c("KO", "KO"),
+  Pseudotime = c("Pseudotime1", "Pseudotime2"),
+  Count = c(nrow(ko_df_pseudotime_1), nrow(ko_df_pseudotime_2))
+)
+
+# Calculate total counts for WT
+total_wt <- sum(count_wt$Count)
+
+# Calculate relative frequencies for WT
+count_wt$Relative_Frequency <- count_wt$Count / total_wt
+
+# Calculate total counts for KO
+total_ko <- sum(count_ko$Count)
+
+# Calculate relative frequencies for KO
+count_ko$Relative_Frequency <- count_ko$Count / total_ko
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/pseudotime_#_cells_1_vs_2_control.pdf",
+  width = 6,
+  height = 6,
+)  # Replace with your desired path
+
+# Create the pie chart for WT
+ggplot(count_wt, aes(x = "", y = Relative_Frequency, fill = Pseudotime)) +
+  geom_bar(
+    stat = "identity",
+    width = 5,
+    color = "white",
+    size = 1.2
+  ) +  # Add white borders
+  coord_polar(theta = "y") +  # Make it a pie chart
+  labs(fill = "Pseudotime") +
+  scale_fill_manual(values = c(
+    "Pseudotime1" = "#A4A6B2",
+    "Pseudotime2" = "#DCDADD"
+  )) +  # Gold and black
+  theme_void() +  # Remove axes and gridlines
+  theme(legend.position = "right")  # Position the legend
+
+# Close the PDF device to save the file
+dev.off()
+
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/pseudotime_#_cells_1_vs_2_ZFP148_KO.pdf",
+  width = 6,
+  height = 6
+)  # Replace with your desired path
+
+# Create the pie chart for KO
+ggplot(count_ko, aes(x = "", y = Relative_Frequency, fill = Pseudotime)) +
+  geom_bar(
+    stat = "identity",
+    width = 5,
+    color = "white",
+    size = 1.2
+  ) +  # Add white borders
+  coord_polar(theta = "y") +  # Make it a pie chart
+  labs(fill = "Pseudotime") +
+  scale_fill_manual(values = c(
+    "Pseudotime1" = "#A4A6B2",
+    "Pseudotime2" = "#DCDADD"
+  )) +  # Gold and black
+  theme_void() +  # Remove axes and gridlines
+  theme(legend.position = "right")  # Position the legend
+
+# Close the PDF device to save the file
+dev.off()
+
+#Fig. 3g
+#find markers for the effector subset of CD8+ T cells comparing Control vs ZFP148 KO
+Idents(combined) <- combined$celltype
+combined_subset <- subset(x = combined, idents = "effector")
+
+## find markers for subset
+DefaultAssay(combined_subset) <- "SCT"
+Idents(combined_subset) <- combined_subset$orig.ident
+
+#combined_subset <- PrepSCTFindMarkers(combined_subset, assay = "SCT", verbose = TRUE)
+KO_DEGs_subset <- FindMarkers(
+  combined_subset,
+  ident.1 = "KO",
+  ident.2 = "WT",
+  min.pct = 0.25,
+  # Filter features detected in at least 25% of cells
+  logfc.threshold = 0.25,
+  # Minimum log fold change threshold
+  recorrect_umi = FALSE,
+)
+
+# Add a column named "gene" using the row names
+KO_DEGs_subset$gene <- rownames(KO_DEGs_subset)
+
+#remove the gene Slc12a8
+KO_DEGs_subset <-
+  KO_DEGs_subset[!KO_DEGs_subset$gene %in% "Slc12a8",]
+
+# Check the first few rows to confirm the change
+head(KO_DEGs_subset, n = 50)
+
+# generate volcano plot for DEGs
+# read edited gene list
+data <- KO_DEGs_subset
+
+# Set the threshold for significance
+p_val_threshold <- 0.05
+FC_threshold <- 0.25
+# Plot using EnhancedVolcano package
+keyvals <- ifelse(
+  data$avg_log2FC < -logFC_threshold &
+    data$p_val_adj <= p_val_threshold,
+  "#8DCDD5",
+  ifelse(
+    data$avg_log2FC >  logFC_threshold &
+      data$p_val_adj <= p_val_threshold,
+    "#E6846D",
+    "#A9A9A9"
+  )
+)
+keyvals[is.na(keyvals)] <- '#A9A9A9'
+names(keyvals)[keyvals == '#E6846D'] <- 'high'
+names(keyvals)[keyvals == '#A9A9A9'] <- 'mid'
+names(keyvals)[keyvals == '#8DCDD5'] <- 'low'
+
+# Select top 10 upregulated and top 10 downregulated genes
+top_up <- data %>%
+  dplyr::filter(p_val_adj < 0.05) %>%
+  arrange(desc(avg_log2FC)) %>%
+  head(10) %>%
+  pull(gene)
+
+top_down <- data %>%
+  dplyr::filter(p_val_adj < 0.05) %>%
+  arrange(avg_log2FC) %>%
+  head(10) %>%
+  pull(gene)
+
+# Combine selected gene names
+selected_genes <- c(top_up, top_down)
+
+# Ensure p-values are not zero by replacing them with a small value
+min_nonzero <-
+  min(data$p_val_adj[data$p_val_adj > 0], na.rm = TRUE)  # Find smallest nonzero p-value
+data$p_val_adj[data$p_val_adj == 0] <-
+  min_nonzero * 0.1  # Replace 0 with 10% of the smallest nonzero p-value
+data$p_val_adj[data$p_val_adj < 1e-30] <-
+  1e-30  # Cap y-values at 30
+
+# EnhancedVolcano plot with only top 10 up/down genes labeled
+volcano_plot <- EnhancedVolcano(
+  data,
+  lab = data$gene,
+  x = 'avg_log2FC',
+  y = 'p_val_adj',
+  xlab = 'Log2 Fold Change',
+  ylab = '-Log10 Adjusted p-value',
+  pCutoff = p_val_threshold,
+  FCcutoff = FC_threshold,
+  pointSize = 2,
+  labSize = 3,
+  colAlpha = 0.8,
+  colCustom = keyvals,
+  legendPosition = 'right',
+  xlim = c(-2, 2),
+  selectLab = selected_genes,
+  # Label only top 10 up/down genes
+  arrowheads = FALSE,
+  drawConnectors = TRUE,
+  widthConnectors = 0.5,
+  lengthConnectors = 5,
+  typeConnectors = "closed",
+  max.overlaps = 20
+)
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Volcanoplot_DEGs_KO_marker_effector_NO_Slc12a8.pdf",
+  width = 7,
+  height = 6
+)  # Replace with your desired path
+
+# Display the plot
+print(volcano_plot)
+
+# Close the PDF device to save the file
+dev.off()
+
+#Fig. 3h
+# Perform GO enrichment analysis for a specific cell type
+# read edited gene list (can be found in: )
+data <- KO_DEGs_subset
+
+# Filter upregualated or downregulated DEGs
+data_filtered_up <-
+  data[data$p_val_adj <= 0.05 & data$avg_log2FC > 0,]
+data_filtered <- data_filtered_up
+
+# Make sure org.Mm.eg.db is loaded for mouse
+library(org.Mm.eg.db)
+entrez_ids <-
+  bitr(
+    unique(data_filtered$gene),
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Mm.eg.db
+  )
+
+# Map the gene symbols to Entrez IDs for each cell type
+KO_DEGs_subset_entrez <-
+  entrez_ids$ENTREZID[entrez_ids$SYMBOL %in% data_filtered$gene]
+
+
+enrich_result_subset <- enrichGO(
+  gene = KO_DEGs_subset_entrez,
+  OrgDb = org.Mm.eg.db,
+  keyType = "ENTREZID",
+  ont = "BP",
+  # Use "BP", "CC", "MF", or "ALL" for Biological Process, Cellular Component, or Molecular Function
+  pAdjustMethod = "BH",
+  qvalueCutoff = 0.05,
+  # Adjust q-value cutoff as needed
+  readable = TRUE     # Convert to readable gene symbols in output
+)
+
+# Extract data frame from enrichResult object
+enrich_df <- as.data.frame(enrich_result_subset@result)
+
+# Rank by zScore and select top 10 terms
+top_terms <- enrich_df %>%
+  arrange(desc(GeneRatio)) %>%
+  dplyr::slice(1:10) %>%
+  mutate(Description = factor(Description, levels = rev(Description)))
+
+# Dot plot for GO enrichment
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Dotplot_GO_enrichment_effector_KO_down.pdf",
+  width = 6,
+  height = 7
+)
+
+dotplot(enrich_result_subset, showCategory = 10) + ggtitle("GO Enrichment Dotplot_effector")
+
+ggplot(data = top_terms,
+       aes(
+         x = GeneRatio,
+         y = Description,
+         color = p.adjust,
+         size = FoldEnrichment
+       )) +
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() +
+  ylab("") +
+  xlab("") +
+  ggtitle("GO Enrichment Analysis")
+
+# Close the PDF device to save the file
+dev.off()
