@@ -1,0 +1,337 @@
+##Fig.5a
+#find DEGs for all CD8+ T cells comparing WT vs ZFP148 KO
+DefaultAssay(combined) <- "SCT"
+Idents(combined) <- combined$orig.ident
+
+KO_markers_all_CD8T <- FindMarkers(
+  combined,
+  ident.1 = "KO",
+  ident.2 = "WT",
+  min.pct = 0.25,
+  # Filter features detected in at least 25% of cells
+  logfc.threshold = 0.25,
+  # Minimum log fold change threshold
+  recorrect_umi = FALSE,
+  #only.pos = TRUE
+)
+head(KO_markers_all_CD8T, n = 50)
+
+# Add a column named "gene" using the row names
+KO_markers_all_CD8T$gene <- rownames(KO_markers_all_CD8T)
+
+#filter p_val_adj <= 0.05
+KO_markers_all_CD8T <- KO_markers_all_CD8T[KO_markers_all_CD8T$p_val_adj <= 0.05,]
+
+#remove the gene Slc12a8 
+KO_markers_all_CD8T <- KO_markers_all_CD8T[!rownames(KO_markers_all_CD8T) %in% "Slc12a8", ]
+
+# Find differential gene activity for all CD8+ T cells comparing WT vs KO
+DefaultAssay(combined) <- 'geneactivity'
+Idents(combined) <- "orig.ident"
+KO_d_geneactivity_all_CD8T <- FindMarkers(
+  object = combined,
+  ident.1 = 'KO',
+  # Replace with actual group names
+  ident.2 = 'WT',
+  assay = 'geneactivity',
+  min.pct = 0.05,
+  # Minimum percentage of cells expressing the feature
+  logfc.threshold = 0.25,  # Log-fold change threshold
+  #only.pos = TRUE
+)
+
+# Add a column named "gene" using the row names
+KO_d_geneactivity_all_CD8T$gene <- rownames(KO_d_geneactivity_all_CD8T)
+
+# Check the first few rows to confirm the change
+head(KO_d_geneactivity_all_CD8T, n = 50)
+
+#filter p_val_adj <= 0.05
+KO_d_geneactivity_all_CD8T <- KO_d_geneactivity_all_CD8T[KO_d_geneactivity_all_CD8T$p_val_adj <= 0.05,]
+
+# remove the gene Slc12a8 
+KO_d_geneactivity_all_CD8T <- KO_d_geneactivity_all_CD8T[!rownames(KO_d_geneactivity_all_CD8T) %in% "Slc12a8", ]
+
+# Find overlapping DEGs and d_geneactivity in all CD8+ T cells
+DEGs <- KO_markers_all_CD8T
+d_geneactivity <- KO_d_geneactivity_all_CD8T
+
+# Merge the two DEG lists based on gene names
+merged_degs <- merge(DEGs, d_geneactivity, by = "gene")
+
+# Perform a correlation analysis on the log2 fold changes
+correlation_result <-
+  cor(merged_degs$avg_log2FC.x, merged_degs$avg_log2FC.y, method = "spearman")
+
+# Output the correlation result
+print(paste("Spearman correlation coefficient:", correlation_result))
+
+# Visualize the correlation with a scatter plot
+library(ggplot2)
+library(ggrepel)
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Correlation_all CD8T_DEG_geneactivity_no_Slc12a8.pdf",
+  width = 7,
+  height = 6
+)  # Replace with your desired path
+
+# Display the plot
+ggplot(merged_degs, aes(x = avg_log2FC.x, y = avg_log2FC.y)) +
+  geom_point(color = "black", size = 1, alpha = 0.6) +  
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "blue", fill = "lightgray") +  
+  geom_text_repel(
+    aes(label = gene),
+    size = 5,
+    fontface = "bold.italic",  
+    max.overlaps = 20,  
+    box.padding = 0.3,  
+    point.padding = 0.3
+  ) +
+  annotate(
+    "text",
+    x = min(merged_degs$avg_log2FC.x) + 0.2,  
+    y = max(merged_degs$avg_log2FC.y) - 0.2,
+    label = as.expression(bquote(italic(R) == .(round(correlation_result, 2)) ~ "," ~ italic(p) < 2.2e-16)),  
+    parse = TRUE,
+    hjust = 0
+  ) +
+  labs(
+    x = "ATAC log2 (fold change)",
+    y = "RNA log2 (fold change)"
+  ) +
+  theme_classic(base_size = 16) +
+  theme(
+    plot.title = element_blank(),  
+    axis.title = element_text(face = "bold"),
+    plot.margin = margin(10, 10, 10, 10)
+  )
+
+# Close the PDF device to save the file
+dev.off()
+
+##Fig.5b
+gene_of_interest <- "Klf2"
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Klf2_condition_violin_plot_SCT.pdf",
+  width = 7,
+  height = 5
+)  # Replace with your desired path
+
+# Set the desired order for the 'celltype' levels
+combined$celltype <-
+  factor(
+    combined$celltype,
+    levels = c(
+      "progenitor1",
+      "progenitor2",
+      "effector",
+      "proliferating",
+      "exhausted"
+    )
+  )
+
+# Generate the violin plot and add boxplot for displaying medians
+VlnPlot(object = combined,
+        features = gene_of_interest,
+        group.by = 'celltype',
+        split.by = 'orig.ident',
+        assay = "SCT",
+        pt.size = 0  # Set to 0 to hide individual points
+)
+
+# Close the PDF device to save the file
+dev.off()
+
+#Perform Wilcoxon Rank-Sum test for each cell type, comparing WT and KO
+DefaultAssay(combined) <- 'SCT'
+
+# Extract the expression matrix and metadata
+expression_data <- FetchData(combined, vars = c(gene_of_interest, "celltype", "orig.ident"))
+
+# Perform Wilcoxon Rank-Sum test and calculate mean expression for each cell type
+results <- expression_data %>%
+  group_by(celltype) %>%
+  dplyr::summarize(
+    mean_expression_WT = mean(.data[[gene_of_interest]][orig.ident == "WT"], na.rm = TRUE),
+    mean_expression_KO = mean(.data[[gene_of_interest]][orig.ident == "KO"], na.rm = TRUE),
+    p_value = wilcox.test(
+      .data[[gene_of_interest]][orig.ident == "WT"], 
+      .data[[gene_of_interest]][orig.ident == "KO"]
+    )$p.value,
+    .groups = "drop"  # Avoid unnecessary grouping in the output
+  ) %>%
+  # Adjust p-values for multiple testing using FDR
+  mutate(
+    adjusted_p_value = p.adjust(p_value, method = "fdr"),
+    adjusted_p_value_sci = formatC(adjusted_p_value, format = "e", digits = 2)  # Convert to scientific notation
+  )
+
+# View the results
+print(results)
+
+##Fig.5e
+motif_of_interest <- "MA1515.1" #KLF2 motif
+
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Klf2_motif_condition_violin_plot.pdf",
+  width = 7,
+  height = 5
+)  # Replace with your desired path
+
+# Set the desired order for the 'celltype' levels
+combined$celltype <-
+  factor(
+    combined$celltype,
+    levels = c(
+      "progenitor1",
+      "progenitor2",
+      "effector",
+      "proliferating",
+      "exhausted"
+    )
+  )
+
+# Generate the violin plot and add boxplot for displaying medians
+VlnPlot(object = combined,
+        features = motif_of_interest,
+        group.by = 'celltype',
+        split.by = 'orig.ident',
+        assay = "chromvar",
+        pt.size = 0  # Set to 0 to hide individual points
+)
+
+# Close the PDF device to save the file
+dev.off()
+
+#Perform Wilcoxon Rank-Sum test for each cell type, comparing WT and KO
+DefaultAssay(combined) <- 'chromvar'
+
+# Extract the expression matrix and metadata
+expression_data <- FetchData(combined, vars = c(motif_of_interest, "celltype", "orig.ident"))
+
+# Perform Wilcoxon Rank-Sum test and calculate mean expression for each cell type
+results <- expression_data %>%
+  group_by(celltype) %>%
+  dplyr::summarize(
+    mean_expression_WT = mean(.data[[motif_of_interest]][orig.ident == "WT"], na.rm = TRUE),
+    mean_expression_KO = mean(.data[[motif_of_interest]][orig.ident == "KO"], na.rm = TRUE),
+    p_value = wilcox.test(
+      .data[[motif_of_interest]][orig.ident == "WT"], 
+      .data[[motif_of_interest]][orig.ident == "KO"]
+    )$p.value,
+    .groups = "drop"  # Avoid unnecessary grouping in the output
+  ) %>%
+  # Adjust p-values for multiple testing using FDR
+  mutate(
+    adjusted_p_value = p.adjust(p_value, method = "fdr"),
+    adjusted_p_value_sci = formatC(adjusted_p_value, format = "e", digits = 2)  # Convert to scientific notation
+  )
+
+# View the results
+print(results)
+
+##Fig.5f
+# Load the custom gene set from a file (e.g., a CSV or text file)
+Geneset_custom = read.csv(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/genesets/Mouse_KLF2_signature_NI_2024_rank_by_score_top_50.csv",
+  header = TRUE
+)  # Replace with your desired path
+
+# Assuming the gene names are in the first column, adjust if necessary
+gene_list <-
+  as.vector(Geneset_custom[[1]])  # Change the index to the correct column if necessary
+
+# Step 2: Create a named list for AUCell
+gene_set_for_aucell <- list(Geneset_custom = gene_list)
+
+# Extract RNA expression matrix
+expr_matrix_rna <- as.matrix(combined@assays$SCT@data)
+
+# Check which genes are detected in the expression matrix
+detected_genes <- rownames(expr_matrix_rna)
+
+# Filter the gene set to include only detected genes
+gene_set_for_aucell_filtered <-
+  gene_set_for_aucell[["Geneset_custom"]][gene_set_for_aucell[["Geneset_custom"]] %in% detected_genes]
+
+# Step 4: Check the size of the filtered gene set
+if (length(gene_set_for_aucell_filtered) < 10) {
+  stop("The filtered gene set contains fewer than 10 genes. Please check the gene set.")
+}
+
+# Build rankings and calculate AUC
+cells_rankings <-
+  AUCell_buildRankings(expr_matrix_rna, plotStats = TRUE)
+auc_scores <-
+  AUCell_calcAUC(list(Geneset_custom = gene_set_for_aucell_filtered),
+                 cells_rankings)
+
+# Extract AUC matrix from auc_scores
+auc_matrix <- as.data.frame(getAUC(auc_scores))
+
+# Normalize the data by applying a z-score transformation to each gene set across cells
+# Scale each column to mean = 0, sd = 1 across cells
+auc_matrix_scaled <- t(apply(auc_matrix, 1, scale))
+
+# Convert the result back to a data frame
+auc_matrix_scaled <- as.matrix(auc_matrix_scaled)
+
+colnames(auc_matrix_scaled) <- colnames(auc_matrix)
+
+auc_scores_vector_scaled <- auc_matrix_scaled["Geneset_custom",]
+
+# Add AUC scores to the metadata of the Seurat object
+combined$AUC_Score_Geneset_custom <- auc_scores_vector_scaled
+
+auc_data <- data.frame(Condition = combined$orig.ident,
+                       AUC_Score = combined$AUC_Score_Geneset_custom)
+
+# Create the violin plot
+# Set the output to a PNG file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Mouse_KLF2_signature_NI_2024_rank_by_score_top_50_by_orig.ident_violin_plot.pdf",
+  width = 8,
+  height = 6
+)  # Replace with your desired path
+
+ggplot(auc_data, aes(x = Condition, y = AUC_Score, fill = Condition)) +
+  geom_violin(trim = TRUE, scale = "width", alpha = 0.6) +  # Violin plot with uniform width
+  labs(title = "Violin Plot of AUC Scores for Klf2",
+       x = "Condition",
+       y = "AUC Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))  # Adjust x-axis label angle
+
+
+# Close the PDF device to save the file
+dev.off()
+
+# Perform the significance test
+# wilcox
+wilcox_result <- wilcox.test(AUC_Score ~ Condition, data = auc_data)
+print(wilcox_result)
+
+##Fig.5g
+# Set the output to a PDF file with a specified path
+pdf(
+  "/fs/ess/PAS2205/Tong_xiao/Single-cell_multiome/Figures_code_testing/Mouse_Klf2_ATAC_track_by_orig.ident.pdf",
+  width = 8,
+  height = 4
+)  # Replace with your desired path
+
+Idents(combined) <- combined$orig.ident
+
+CoveragePlot(
+  combined,
+  region = c("chr8-72315000-72335000"),
+  assay = 'ATAC',
+  peaks = FALSE
+)
+
+# Close the PDF device to save the file
+dev.off()
